@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot - Affordable Organics</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            height: 85vh;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 25px 30px;
+            color: white;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ingest-box {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            font-size: 14px;
+        }
+        input[type="text"]::placeholder { color: rgba(255,255,255,0.7); }
+        input[type="text"]:focus {
+            outline: none;
+            background: rgba(255,255,255,0.3);
+            border-color: white;
+        }
+        button {
+            padding: 12px 24px;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        button:disabled {
+            background: rgba(255,255,255,0.5);
+            cursor: not-allowed;
+            transform: none;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #a7f3d0;
+            display: none;
+        }
+        .status.show { display: block; }
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f8fafc;
+        }
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message.user { justify-content: flex-end; }
+        .message-bubble {
+            max-width: 70%;
+            padding: 14px 18px;
+            border-radius: 18px;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .message.assistant .message-bubble {
+            background: white;
+            color: #1e293b;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .message.system .message-bubble {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+        .input-area {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            gap: 10px;
+        }
+        #queryInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #1e293b;
+        }
+        #queryInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        #sendBtn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-width: 100px;
+        }
+        .loading {
+            display: none;
+            color: #64748b;
+            font-style: italic;
+            padding: 10px;
+        }
+        .loading.show { display: block; }
+        .empty-state {
+            text-align: center;
+            color: #94a3b8;
+            padding: 60px 20px;
+        }
+        .empty-state h2 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 RAG Document Chatbot</h1>
+            <div class="ingest-box">
+                <input type="text" id="docUrl" placeholder="Paste your Google Doc URL here (must be publicly shared)...">
+                <button onclick="ingestDoc()" id="ingestBtn">Load Document</button>
+            </div>
+            <div class="status" id="status">✓ Document loaded successfully!</div>
+        </div>
+        
+        <div class="chat-area" id="chatArea">
+            <div class="empty-state">
+                <h2>Welcome! 👋</h2>
+                <p>Paste a Google Doc URL above to get started.</p>
+                <p style="font-size: 12px; margin-top: 10px;">Make sure the document is set to "Anyone with link can view"</p>
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="queryInput" placeholder="Ask a question about the document..." disabled>
+            <button onclick="sendQuery()" id="sendBtn" disabled>Send</button>
+        </div>
+    </div>
+
+    <script>
+        let docLoaded = false;
+        const API_URL = 'http://localhost:8000';
+
+        async function ingestDoc() {
+            const url = document.getElementById('docUrl').value.trim();
+            if (!url) {
+                alert('Please enter a Google Doc URL');
+                return;
+            }
+
+            const btn = document.getElementById('ingestBtn');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+                const response = await fetch(`${API_URL}/ingest`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    docLoaded = true;
+                    document.getElementById('status').classList.add('show');
+                    document.getElementById('queryInput').disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                    
+                    document.getElementById('chatArea').innerHTML = '';
+                    addMessage('system', `✓ ${data.message}`);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Load Document';
+            }
+        }
+
+        async function sendQuery() {
+            const query = document.getElementById('queryInput').value.trim();
+            if (!query || !docLoaded) return;
+
+            addMessage('user', query);
+            document.getElementById('queryInput').value = '';
+
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        query,
+                        session_id: 'session-' + Date.now()
+                    })
+                });
+
+                const data = await response.json();
+                addMessage('assistant', data.answer);
+            } catch (error) {
+                addMessage('assistant', 'Sorry, something went wrong. Please try again.');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function addMessage(role, content) {
+            const chatArea = document.getElementById('chatArea');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = content;
+            
+            msgDiv.appendChild(bubble);
+            chatArea.appendChild(msgDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        document.getElementById('queryInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendQuery();
+        });
+
+        document.getElementById('docUrl').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') ingestDoc();
+        });
+    </script>
+</body>
+</html>
+```
