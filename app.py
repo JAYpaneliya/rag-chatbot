@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import requests
-import groq
+from groq import Groq
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
@@ -28,7 +28,10 @@ def init_models():
     print("Loading embedding model...")
     embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
     from groq import Client
-    groq_client = groq.Client(api_key=os.environ.get('GROQ_API_KEY'))
+    api_key = os.environ.get('GROQ_API_KEY')
+if not api_key:
+    raise ValueError("GROQ_API_KEY not found in environment")
+groq_client = Groq(api_key=api_key)
     models_initialized = True
     print("Models loaded!")
 

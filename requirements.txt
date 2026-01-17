@@ -6,6 +6,6 @@ scikit-learn==1.5.2
 sentence-transformers==3.3.1
 torch==2.5.1
 transformers==4.46.3
-groq==0.3.0
+groq==0.9.0
 gunicorn==23.0.0
 python-dotenv==1.0.1
