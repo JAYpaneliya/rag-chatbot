@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAG Chatbot - Affordable Organics</title>
+    <title>RAG Chatbot</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -34,9 +34,6 @@
         h1 {
             font-size: 24px;
             margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
         .ingest-box {
             display: flex;
@@ -141,22 +138,10 @@
             color: white;
             min-width: 100px;
         }
-        .loading {
-            display: none;
-            color: #64748b;
-            font-style: italic;
-            padding: 10px;
-        }
-        .loading.show { display: block; }
         .empty-state {
             text-align: center;
             color: #94a3b8;
             padding: 60px 20px;
-        }
-        .empty-state h2 {
-            font-size: 20px;
-            margin-bottom: 10px;
-            color: #64748b;
         }
     </style>
 </head>
@@ -165,43 +150,42 @@
         <div class="header">
             <h1>🤖 RAG Document Chatbot</h1>
             <div class="ingest-box">
-                <input type="text" id="docUrl" placeholder="Paste your Google Doc URL here (must be publicly shared)...">
-                <button onclick="ingestDocument()" id="ingestBtn">Load Document</button>
+                <input type="text" id="docUrl" placeholder="Paste Google Doc URL (must be public)...">
+                <button id="ingestBtn">Load Document</button>
             </div>
-            <div class="status" id="status">✓ Document loaded successfully!</div>
+            <div class="status" id="status">✓ Document loaded!</div>
         </div>
         
         <div class="chat-area" id="chatArea">
             <div class="empty-state">
                 <h2>Welcome! 👋</h2>
                 <p>Paste a Google Doc URL above to get started.</p>
-                <p style="font-size: 12px; margin-top: 10px;">Make sure the document is set to "Anyone with link can view"</p>
             </div>
         </div>
         
         <div class="input-area">
-            <input type="text" id="queryInput" placeholder="Ask a question about the document..." disabled>
-            <button onclick="sendQuery()" id="sendBtn" disabled>Send</button>
+            <input type="text" id="queryInput" placeholder="Ask a question..." disabled>
+            <button id="sendBtn" disabled>Send</button>
         </div>
     </div>
 
     <script>
         let docLoaded = false;
-        const API_URL = 'const API_URL = 'https://rag-chatbot-rtzg.onrender.com';
+        const API_URL = 'https://rag-chatbot-rtzg.onrender.com';
 
-        async function ingestDocument() {
+        document.getElementById('ingestBtn').addEventListener('click', async function() {
             const url = document.getElementById('docUrl').value.trim();
             if (!url) {
                 alert('Please enter a Google Doc URL');
                 return;
             }
 
-            const btn = document.getElementById('ingestBtn');
+            const btn = this;
             btn.disabled = true;
             btn.textContent = 'Loading...';
 
             try {
-                const response = await fetch(`${API_URL}/ingest`, {
+                const response = await fetch(API_URL + '/ingest', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url })
@@ -216,7 +200,7 @@
                     document.getElementById('sendBtn').disabled = false;
                     
                     document.getElementById('chatArea').innerHTML = '';
-                    addMessage('system', `✓ ${data.message}`);
+                    addMessage('system', '✓ ' + data.message);
                 } else {
                     alert('Error: ' + data.error);
                 }
@@ -226,20 +210,20 @@
                 btn.disabled = false;
                 btn.textContent = 'Load Document';
             }
-        }
+        });
 
-        async function sendQuery() {
+        document.getElementById('sendBtn').addEventListener('click', async function() {
             const query = document.getElementById('queryInput').value.trim();
             if (!query || !docLoaded) return;
 
             addMessage('user', query);
             document.getElementById('queryInput').value = '';
 
-            const btn = document.getElementById('sendBtn');
+            const btn = this;
             btn.disabled = true;
 
             try {
-                const response = await fetch(`${API_URL}/chat`, {
+                const response = await fetch(API_URL + '/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
@@ -251,16 +235,16 @@
                 const data = await response.json();
                 addMessage('assistant', data.answer);
             } catch (error) {
-                addMessage('assistant', 'Sorry, something went wrong. Please try again.');
+                addMessage('assistant', 'Sorry, something went wrong.');
             } finally {
                 btn.disabled = false;
             }
-        }
+        });
 
         function addMessage(role, content) {
             const chatArea = document.getElementById('chatArea');
             const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${role}`;
+            msgDiv.className = 'message ' + role;
             
             const bubble = document.createElement('div');
             bubble.className = 'message-bubble';
@@ -271,14 +255,17 @@
             chatArea.scrollTop = chatArea.scrollHeight;
         }
 
-        document.getElementById('queryInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendQuery();
+        document.getElementById('queryInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('sendBtn').click();
+            }
         });
 
-        document.getElementById('docUrl').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') ingestDocument();
+        document.getElementById('docUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('ingestBtn').click();
+            }
         });
     </script>
 </body>
 </html>
-```
