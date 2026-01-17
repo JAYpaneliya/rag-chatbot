@@ -83,6 +83,8 @@ def chunk_document(text, chunk_size=800, overlap=150):
 
 def create_embeddings(chunks):
     global embedding_model
+    if embedding_model is None:
+        init_models()
     texts = [chunk['text'] for chunk in chunks]
     embeddings = embedding_model.encode(texts, show_progress_bar=False)
     return embeddings
@@ -92,6 +94,9 @@ def retrieve_relevant_chunks(query, top_k=3):
     
     if not document_chunks or chunk_embeddings is None:
         return []
+    
+    if embedding_model is None:
+        init_models()
     
     query_embedding = embedding_model.encode([query], show_progress_bar=False)[0]
     similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
@@ -110,6 +115,9 @@ def retrieve_relevant_chunks(query, top_k=3):
 
 def generate_answer(query, context_chunks, history):
     global groq_client
+    
+    if groq_client is None:
+        init_models()
     
     try:
         if context_chunks:
