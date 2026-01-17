@@ -9,7 +9,6 @@ from sentence_transformers import SentenceTransformer
 import re
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
@@ -20,12 +19,16 @@ chunk_embeddings = []
 embedding_model = None
 conversation_history = {}
 groq_client = None
+models_initialized = False
 
 def init_models():
-    global embedding_model, groq_client
+    global embedding_model, groq_client, models_initialized
+    if models_initialized:
+        return
     print("Loading embedding model...")
     embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
     groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
+    models_initialized = True
     print("Models loaded!")
 
 def extract_doc_id(url):
@@ -156,73 +159,101 @@ def generate_answer(query, context_chunks, history):
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'healthy'})
+    return jsonify({'status': 'healthy', 'models_loaded': models_initialized})
+
+@app.route('/init', methods=['GET'])
+def initialize():
+    """Initialize models before first use"""
+    try:
+        init_models()
+        return jsonify({'status': 'success', 'message': 'Models initialized'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/ingest', methods=['POST'])
 def ingest_document():
     global document_chunks, chunk_embeddings
     
-    data = request.json
-    doc_url = data.get('url', '').strip()
-    
-    if not doc_url:
-        return jsonify({'error': 'No URL provided'}), 400
-    
-    if 'docs.google.com' not in doc_url:
-        return jsonify({'error': 'Please provide a valid Google Docs URL'}), 400
-    
-    print(f"Fetching: {doc_url}")
-    content, error = fetch_google_doc(doc_url)
-    
-    if error:
-        return jsonify({'error': error}), 400
-    
-    document_chunks = chunk_document(content)
-    print(f"Created {len(document_chunks)} chunks")
-    
-    chunk_embeddings = create_embeddings(document_chunks)
-    print("Embeddings created!")
-    
-    return jsonify({
-        'status': 'success',
-        'chunks': len(document_chunks),
-        'message': f'Document processed into {len(document_chunks)} chunks'
-    })
+    try:
+        # Initialize models if not already done
+        if not models_initialized:
+            init_models()
+        
+        data = request.json
+        doc_url = data.get('url', '').strip()
+        
+        if not doc_url:
+            return jsonify({'error': 'No URL provided'}), 400
+        
+        if 'docs.google.com' not in doc_url:
+            return jsonify({'error': 'Please provide a valid Google Docs URL'}), 400
+        
+        print(f"Fetching: {doc_url}")
+        content, error = fetch_google_doc(doc_url)
+        
+        if error:
+            return jsonify({'error': error}), 400
+        
+        document_chunks = chunk_document(content)
+        print(f"Created {len(document_chunks)} chunks")
+        
+        chunk_embeddings = create_embeddings(document_chunks)
+        print("Embeddings created!")
+        
+        return jsonify({
+            'status': 'success',
+            'chunks': len(document_chunks),
+            'message': f'Document processed into {len(document_chunks)} chunks'
+        })
+    except Exception as e:
+        print(f"Error in ingest: {str(e)}")
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
     global conversation_history
     
-    data = request.json
-    query = data.get('query', '').strip()
-    session_id = data.get('session_id', 'default')
-    
-    if not query:
-        return jsonify({'error': 'No query provided'}), 400
-    
-    if not document_chunks:
-        return jsonify({'error': 'Please ingest a document first'}), 400
-    
-    if session_id not in conversation_history:
-        conversation_history[session_id] = []
-    
-    relevant_chunks = retrieve_relevant_chunks(query, top_k=3)
-    answer = generate_answer(query, relevant_chunks, conversation_history[session_id])
-    
-    conversation_history[session_id].append({"role": "user", "content": query})
-    conversation_history[session_id].append({"role": "assistant", "content": answer})
-    
-    if len(conversation_history[session_id]) > 10:
-        conversation_history[session_id] = conversation_history[session_id][-10:]
-    
-    return jsonify({
-        'answer': answer,
-        'sources': [chunk['section'] for chunk in relevant_chunks]
-    })
+    try:
+        data = request.json
+        query = data.get('query', '').strip()
+        session_id = data.get('session_id', 'default')
+        
+        if not query:
+            return jsonify({'error': 'No query provided'}), 400
+        
+        if not document_chunks:
+            return jsonify({'error': 'Please ingest a document first'}), 400
+        
+        if session_id not in conversation_history:
+            conversation_history[session_id] = []
+        
+        relevant_chunks = retrieve_relevant_chunks(query, top_k=3)
+        answer = generate_answer(query, relevant_chunks, conversation_history[session_id])
+        
+        conversation_history[session_id].append({"role": "user", "content": query})
+        conversation_history[session_id].append({"role": "assistant", "content": answer})
+        
+        if len(conversation_history[session_id]) > 10:
+            conversation_history[session_id] = conversation_history[session_id][-10:]
+        
+        return jsonify({
+            'answer': answer,
+            'sources': [chunk['section'] for chunk in relevant_chunks]
+        })
+    except Exception as e:
+        print(f"Error in chat: {str(e)}")
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/')
 def index():
     return send_from_directory('static', 'index.html')
+
+# Initialize models on startup for gunicorn workers
+try:
+    init_models()
+except Exception as e:
+    print(f"Warning: Could not initialize models on startup: {e}")
+    print("Models will be initialized on first request")
 
 if __name__ == '__main__':
     init_models()

@@ -185,11 +185,15 @@
             btn.textContent = 'Loading...';
 
             try {
-                const response = await fetch(API_URL + '/ingest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                });
+                if (!docLoaded) {
+    addMessage('system', 'Loading AI models... This may take 30-60 seconds on first request.');
+}
+
+const response = await fetch(API_URL + '/ingest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url })
+});
 
                 const data = await response.json();
 
