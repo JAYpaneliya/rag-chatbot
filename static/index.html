@@ -166,7 +166,7 @@
             <h1>🤖 RAG Document Chatbot</h1>
             <div class="ingest-box">
                 <input type="text" id="docUrl" placeholder="Paste your Google Doc URL here (must be publicly shared)...">
-                <button onclick="ingestDoc()" id="ingestBtn">Load Document</button>
+                <button onclick="ingestDocument()" id="ingestBtn">Load Document</button>
             </div>
             <div class="status" id="status">✓ Document loaded successfully!</div>
         </div>
@@ -189,7 +189,7 @@
         let docLoaded = false;
         const API_URL = 'const API_URL = 'https://rag-chatbot-rtzg.onrender.com';
 
-        async function ingestDoc() {
+        async function ingestDocument() {
             const url = document.getElementById('docUrl').value.trim();
             if (!url) {
                 alert('Please enter a Google Doc URL');
