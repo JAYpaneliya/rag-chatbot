@@ -27,7 +27,8 @@ def init_models():
         return
     print("Loading embedding model...")
     embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
+    from groq import Client
+    groq_client = Client(api_key=os.environ.get('GROQ_API_KEY'))
     models_initialized = True
     print("Models loaded!")
 
