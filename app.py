@@ -27,19 +27,15 @@ def init_models():
         return
     print("Loading embedding model...")
     embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    from groq import Client
     api_key = os.environ.get('GROQ_API_KEY')
-if not api_key:
-    raise ValueError("GROQ_API_KEY not found in environment")
-groq_client = Groq(api_key=api_key)
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not found")
+    groq_client = Groq(api_key=api_key)
     models_initialized = True
     print("Models loaded!")
 
 def extract_doc_id(url):
-    patterns = [
-        r'/document/d/([a-zA-Z0-9-_]+)',
-        r'id=([a-zA-Z0-9-_]+)'
-    ]
+    patterns = [r'/document/d/([a-zA-Z0-9-_]+)', r'id=([a-zA-Z0-9-_]+)']
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
@@ -50,42 +46,32 @@ def fetch_google_doc(doc_url):
     try:
         doc_id = extract_doc_id(doc_url)
         if not doc_id:
-            return None, "Invalid Google Doc URL format"
-        
+            return None, "Invalid Google Doc URL"
         export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
         response = requests.get(export_url, timeout=15)
-        
         if response.status_code == 200:
             content = response.text.strip()
             if len(content) < 50:
-                return None, "Document appears to be empty"
+                return None, "Document is empty"
             return content, None
-        elif response.status_code == 404:
-            return None, "Document not found. Make sure it's publicly accessible."
-        else:
-            return None, f"Cannot access document. Ensure it's set to 'Anyone with link can view'"
+        return None, "Cannot access document"
     except Exception as e:
-        return None, f"Error: {str(e)}"
+        return None, str(e)
 
 def chunk_document(text, chunk_size=800, overlap=150):
     text = re.sub(r'\n\s*\n', '\n\n', text)
     text = re.sub(r' +', ' ', text)
-    
     words = text.split()
     chunks = []
-    
     for i in range(0, len(words), chunk_size - overlap):
         chunk_words = words[i:i + chunk_size]
         chunk_text = ' '.join(chunk_words)
-        
         if len(chunk_text.strip()) > 100:
             chunks.append({
                 'text': chunk_text,
                 'index': len(chunks),
-                'section': f"Section {len(chunks) + 1}",
-                'word_count': len(chunk_words)
+                'section': f"Section {len(chunks) + 1}"
             })
-    
     return chunks
 
 def create_embeddings(chunks):
@@ -98,17 +84,13 @@ def create_embeddings(chunks):
 
 def retrieve_relevant_chunks(query, top_k=3):
     global document_chunks, chunk_embeddings, embedding_model
-    
     if not document_chunks or chunk_embeddings is None:
         return []
-    
     if embedding_model is None:
         init_models()
-    
     query_embedding = embedding_model.encode([query], show_progress_bar=False)[0]
     similarities = cosine_similarity([query_embedding], chunk_embeddings)[0]
     top_indices = np.argsort(similarities)[-top_k:][::-1]
-    
     results = []
     for idx in top_indices:
         if similarities[idx] > 0.25:
@@ -117,147 +99,94 @@ def retrieve_relevant_chunks(query, top_k=3):
                 'section': document_chunks[idx]['section'],
                 'score': float(similarities[idx])
             })
-    
     return results
 
 def generate_answer(query, context_chunks, history):
     global groq_client
-    
     if groq_client is None:
         init_models()
-    
     try:
         if context_chunks:
-            context = "\n\n".join([
-                f"[{chunk['section']}] {chunk['text'][:600]}..."
-                for chunk in context_chunks
-            ])
+            context = "\n\n".join([f"[{chunk['section']}] {chunk['text'][:600]}..." for chunk in context_chunks])
         else:
             context = "No relevant information found."
-        
-        messages = [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that answers questions based on document content. Rules: 1. ALWAYS cite sections (e.g., According to Section 2...). 2. If not in context, say This information isn't in the document. 3. Keep answers 2-4 sentences. 4. Be accurate - only use the context provided"
-            }
-        ]
-        
+        messages = [{
+            "role": "system",
+            "content": "You are a helpful assistant. ALWAYS cite sections. If not in context, say 'This information isn't in the document'. Keep answers 2-4 sentences."
+        }]
         for msg in history[-6:]:
             messages.append(msg)
-        
-        messages.append({
-            "role": "user",
-            "content": f"Context:\n{context}\n\nQuestion: {query}"
-        })
-        
+        messages.append({"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"})
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,
             max_tokens=400,
             temperature=0.3
         )
-        
         return response.choices[0].message.content
     except Exception as e:
         return f"Error: {str(e)}"
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'healthy', 'models_loaded': models_initialized})
-
-@app.route('/init', methods=['GET'])
-def initialize():
-    """Initialize models before first use"""
-    try:
-        init_models()
-        return jsonify({'status': 'success', 'message': 'Models initialized'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    return jsonify({'status': 'healthy'})
 
 @app.route('/ingest', methods=['POST'])
 def ingest_document():
     global document_chunks, chunk_embeddings
-    
     try:
-        # Initialize models if not already done
         if not models_initialized:
             init_models()
-        
         data = request.json
         doc_url = data.get('url', '').strip()
-        
         if not doc_url:
             return jsonify({'error': 'No URL provided'}), 400
-        
         if 'docs.google.com' not in doc_url:
-            return jsonify({'error': 'Please provide a valid Google Docs URL'}), 400
-        
-        print(f"Fetching: {doc_url}")
+            return jsonify({'error': 'Invalid URL'}), 400
         content, error = fetch_google_doc(doc_url)
-        
         if error:
             return jsonify({'error': error}), 400
-        
         document_chunks = chunk_document(content)
-        print(f"Created {len(document_chunks)} chunks")
-        
         chunk_embeddings = create_embeddings(document_chunks)
-        print("Embeddings created!")
-        
         return jsonify({
             'status': 'success',
             'chunks': len(document_chunks),
             'message': f'Document processed into {len(document_chunks)} chunks'
         })
     except Exception as e:
-        print(f"Error in ingest: {str(e)}")
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
     global conversation_history
-    
     try:
         data = request.json
         query = data.get('query', '').strip()
         session_id = data.get('session_id', 'default')
-        
         if not query:
-            return jsonify({'error': 'No query provided'}), 400
-        
+            return jsonify({'error': 'No query'}), 400
         if not document_chunks:
-            return jsonify({'error': 'Please ingest a document first'}), 400
-        
+            return jsonify({'error': 'No document loaded'}), 400
         if session_id not in conversation_history:
             conversation_history[session_id] = []
-        
         relevant_chunks = retrieve_relevant_chunks(query, top_k=3)
         answer = generate_answer(query, relevant_chunks, conversation_history[session_id])
-        
         conversation_history[session_id].append({"role": "user", "content": query})
         conversation_history[session_id].append({"role": "assistant", "content": answer})
-        
         if len(conversation_history[session_id]) > 10:
             conversation_history[session_id] = conversation_history[session_id][-10:]
-        
-        return jsonify({
-            'answer': answer,
-            'sources': [chunk['section'] for chunk in relevant_chunks]
-        })
+        return jsonify({'answer': answer, 'sources': [chunk['section'] for chunk in relevant_chunks]})
     except Exception as e:
-        print(f"Error in chat: {str(e)}")
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
     return send_from_directory('static', 'index.html')
 
-# Initialize models on startup for gunicorn workers
 try:
     init_models()
 except Exception as e:
-    print(f"Warning: Could not initialize models on startup: {e}")
-    print("Models will be initialized on first request")
+    print(f"Models will init on first request: {e}")
 
 if __name__ == '__main__':
     init_models()
